@@ -1,94 +1,127 @@
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
-public class ServiceOrchestration {
+@RestController
+public class WorkbenchController {
 
-    // Simulated Service1 API call
-    public Map<String, List<String>> callService1() {
-        // Return map of markets and their inventories for which service2 calls need to be made
-        Map<String, List<String>> marketInventories = new HashMap<>();
-        marketInventories.put("market1", Arrays.asList("inventory1", "inventory2"));
-        marketInventories.put("market2", Arrays.asList("inventory3"));
-        marketInventories.put("market3", Arrays.asList("inventory4", "inventory5", "inventory6"));
-        return marketInventories;
-    }
+    @Autowired
+    private WorkbenchService workbenchService;
 
-    // Simulated Service2 API call
-    public List<TargetedAvailability> callService2(String market, String inventory) {
-        // This method should call the actual service2 API and return its list of TargetedAvailability objects
-        // For demonstration, I'm returning a mocked list of TargetedAvailability objects
-        return Arrays.asList(
-                new TargetedAvailability("object1", market, inventory),
-                new TargetedAvailability("object2", market, inventory)
-        );
-    }
+    @GetMapping("/processSecurities")
+    public Map<String, Object> processSecurities() throws InterruptedException, ExecutionException {
+        // Step 1: Divide the securities by market
+        Map<String, List<String>> securitiesByMarket = divideSecuritiesByMarket();
 
-    // Simulated Service3 API call
-    public String callService3(List<List<TargetedAvailability>> service2Responses) {
-        // This method should call the actual service3 API and return its response
-        // For demonstration, I'm returning a mocked response
-        return "service3_response_" + service2Responses.stream()
-                .flatMap(List::stream)
-                .map(TargetedAvailability::toString)
-                .collect(Collectors.joining(","));
-    }
+        // Step 2: Load taList for each security under each market
+        Map<String, Map<String, List<String>>> taListByMarket = loadTaListForSecurities(securitiesByMarket);
 
-    public void orchestrateServices() {
-        ExecutorService executor = Executors.newFixedThreadPool(10); // Create a thread pool
-
-        // Get map of markets and their inventories from Service1
-        Map<String, List<String>> marketInventories = callService1();
-
-        // Make asynchronous calls to Service2 for each inventory within each market
-        Map<String, List<CompletableFuture<List<TargetedAvailability>>>> marketService2Futures = new HashMap<>();
-        for (Map.Entry<String, List<String>> entry : marketInventories.entrySet()) {
+        // Step 3: Call AutoBorrow API for each market
+        Map<String, List<String>> responseByMarket = new ConcurrentHashMap<>();
+        for (Map.Entry<String, Map<String, List<String>>> entry : taListByMarket.entrySet()) {
             String market = entry.getKey();
-            List<CompletableFuture<List<TargetedAvailability>>> futures = entry.getValue().stream()
-                    .map(inventory -> CompletableFuture.supplyAsync(() -> callService2(market, inventory), executor))
+            Map<String, List<String>> taListForMarket = entry.getValue();
+
+            List<String> response = workbenchService.callAutoBorrowApi(market, taListForMarket);
+            responseByMarket.put(market, response);
+        }
+
+        // Aggregate response and send it to UI
+        Map<String, Object> aggregatedResponse = new HashMap<>();
+        for (Map.Entry<String, List<String>> entry : responseByMarket.entrySet()) {
+            aggregatedResponse.put(entry.getKey(), entry.getValue());
+        }
+
+        return aggregatedResponse;
+    }
+
+    private Map<String, List<String>> divideSecuritiesByMarket() {
+        // Mocked data. Replace with actual data source.
+        Map<String, List<String>> securitiesByMarket = new HashMap<>();
+        securitiesByMarket.put("Market1", Arrays.asList("Sec1", "Sec2"));
+        securitiesByMarket.put("Market2", Arrays.asList("Sec3", "Sec4"));
+        // ... Add more markets and securities
+
+        return securitiesByMarket;
+    }
+
+    private Map<String, Map<String, List<String>>> loadTaListForSecurities(Map<String, List<String>> securitiesByMarket) throws InterruptedException, ExecutionException {
+        Map<String, Map<String, List<String>>> taListByMarket = new ConcurrentHashMap<>();
+        ExecutorService executorService = Executors.newFixedThreadPool(10); // Thread pool size
+
+        for (Map.Entry<String, List<String>> entry : securitiesByMarket.entrySet()) {
+            String market = entry.getKey();
+            List<String> securities = entry.getValue();
+            Map<String, List<String>> taListForMarket = new ConcurrentHashMap<>();
+
+            List<CompletableFuture<Void>> futures = securities.stream()
+                    .map(security -> CompletableFuture.runAsync(() -> {
+                        try {
+                            List<String> taList = workbenchService.loadTaList(market, security);
+                            taListForMarket.put(security, taList);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }, executorService))
                     .collect(Collectors.toList());
-            marketService2Futures.put(market, futures);
+
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
+            taListByMarket.put(market, taListForMarket);
         }
 
-        // Wait for all Service2 calls to complete for each market
-        Map<String, CompletableFuture<Void>> marketAllService2Futures = new HashMap<>();
-        for (Map.Entry<String, List<CompletableFuture<List<TargetedAvailability>>>> entry : marketService2Futures.entrySet()) {
-            String market = entry.getKey();
-            List<CompletableFuture<List<TargetedAvailability>>> futures = entry.getValue();
-            CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-            marketAllService2Futures.put(market, allFutures);
-        }
+        return taListByMarket;
+    }
+}
 
-        // Handle the results and call Service3 once per market
-        for (Map.Entry<String, CompletableFuture<Void>> entry : marketAllService2Futures.entrySet()) {
-            String market = entry.getKey();
-            CompletableFuture<Void> allFutures = entry.getValue();
+@Service
+class WorkbenchService {
 
-            allFutures.thenAcceptAsync(
-                    v -> {
-                        List<List<TargetedAvailability>> service2Responses = marketService2Futures.get(market).stream()
-                                .map(CompletableFuture::join)
-                                .collect(Collectors.toList());
+    @Autowired
+    private RadService radService;
 
-                        String service3Response = callService3(service2Responses);
-                        System.out.println("Service3 response for market " + market + ": " + service3Response);
-                    },
-                    executor
-            );
-        }
-
-        // Wait for all tasks to complete
-        marketAllService2Futures.values().forEach(CompletableFuture::join);
-        executor.shutdown(); // Shut down the executor
+    @Async
+    public List<String> loadTaList(String market, String security) {
+        // Call Rad service API to load taList for the security
+        List<String> taList = radService.getTaList(market, security);
+        
+        // Preprocess taList
+        // Example: taList = preprocessTaList(taList);
+        
+        return taList;
     }
 
-    public static void main(String[] args) {
-        ServiceOrchestration orchestration = new ServiceOrchestration();
-        orchestration.orchestrateServices();
+    public List<String> callAutoBorrowApi(String market, Map<String, List<String>> taListForMarket) {
+        // Call AutoBorrow API for the market with taListForMarket and return the response
+        List<String> response = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : taListForMarket.entrySet()) {
+            String security = entry.getKey();
+            List<String> taList = entry.getValue();
+            
+            // Call AutoBorrow API with taList and add response to the list
+            // Example: String borrowResponse = autoBorrowApi.call(market, security, taList);
+            // response.add(borrowResponse);
+        }
+
+        return response;
+    }
+}
+
+@Service
+class RadService {
+
+    public List<String> getTaList(String market, String security) {
+        // Implementation to call Rad service API and get taList for the security
+        // Return mock data for demonstration
+        return Arrays.asList("TA1", "TA2", "TA3");
     }
 }
