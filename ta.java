@@ -17,6 +17,26 @@ public class WorkbenchController {
 
     @Autowired
     private WorkbenchService workbenchService;
+import java.util.List;
+import java.util.stream.Collectors;
+
+List<OrderReqBatch> updatedOrderReqBatches = listOfOrderReqBatches.stream()
+    .map(batch -> {
+        List<OrderRequest> updatedOrderRequests = batch.getOrderRequests().stream()
+            .map(orderRequest -> {
+                List<Bid> filteredBids = orderRequest.getBids().stream()
+                    .filter(bid -> !rejectedBidIdList.contains(bid.getBidId())) // Filter out bids with rejected bidId
+                    .collect(Collectors.toList());
+                orderRequest.setBids(filteredBids); // Update the order request with filtered bids
+                return orderRequest;
+            })
+            .collect(Collectors.toList());
+        batch.setOrderRequests(updatedOrderRequests); // Update the batch with filtered order requests
+        return batch;
+    })
+    .collect(Collectors.toList());
+
+System.out.println(updatedOrderReqBatches); // Output the updated structure
 
     @GetMapping("/processSecurities")
     public Map<String, Object> processSecurities() throws InterruptedException, ExecutionException {
