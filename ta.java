@@ -145,3 +145,57 @@ class RadService {
         return Arrays.asList("TA1", "TA2", "TA3");
     }
 }
+import javax.net.ssl.*;
+import java.io.FileInputStream;
+import java.security.KeyStore;
+import java.security.SecureRandom;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+
+public class ApiClientWithHttpURLConnection {
+
+    public static void main(String[] args) throws Exception {
+        String url = "https://api.example.com/token"; // Your API URL
+        String certPath = "path/to/cert.pem";  // Path to certificate
+        String keyPath = "path/to/key.pem";  // Path to private key
+        String caCertPath = "path/to/ca.pem";  // Path to CA certificate for verification
+
+        // Load the SSL context with your cert, key, and custom CA
+        SSLContext sslContext = createCustomSSLContext(certPath, keyPath, caCertPath);
+
+        // Create URL object
+        URL obj = new URL(url);
+        HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
+
+        // Set up SSL context
+        con.setSSLSocketFactory(sslContext.getSocketFactory());
+
+        // Proceed with the request setup and execution...
+    }
+
+    // Method to create SSLContext with a custom CA
+    private static SSLContext createCustomSSLContext(String certPath, String keyPath, String caCertPath) throws Exception {
+        // Load client certificate and private key (as done before)
+        SSLContext sslContext = createSSLContext(certPath, keyPath);  // Use the existing method to load cert & key
+
+        // Load CA certificate from PEM file
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        FileInputStream caCertInputStream = new FileInputStream(caCertPath);
+        X509Certificate caCert = (X509Certificate) cf.generateCertificate(caCertInputStream);
+        caCertInputStream.close();
+
+        // Create a KeyStore and load the CA certificate
+        KeyStore caKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        caKeyStore.load(null, null);  // Initialize the KeyStore
+        caKeyStore.setCertificateEntry("caCert", caCert);  // Add the CA certificate
+
+        // Create a TrustManager that trusts the CA in the KeyStore
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(caKeyStore);
+
+        // Initialize the SSLContext with the custom TrustManager (CA trust)
+        sslContext.init(null, tmf.getTrustManagers(), new SecureRandom());
+
+        return sslContext;
+    }
+}
