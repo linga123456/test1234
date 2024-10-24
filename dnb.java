@@ -126,3 +126,55 @@ public class RestTemplateConfig {
         }
     }
 }
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.Base64;
+
+public class PrivateKeyLoader {
+
+    public static void main(String[] args) {
+        try {
+            // Load the private key from the .key file in the resources folder
+            InputStream keyStream = PrivateKeyLoader.class.getClassLoader().getResourceAsStream("private.key");
+
+            // Ensure the key file was found
+            if (keyStream == null) {
+                throw new IllegalArgumentException("Private key file not found in resources folder.");
+            }
+
+            // Read the private key file (PEM format) as a string
+            BufferedReader reader = new BufferedReader(new InputStreamReader(keyStream, StandardCharsets.UTF_8));
+            StringBuilder keyBuilder = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("-----")) {
+                    keyBuilder.append(line);  // Ignore the PEM headers and footers
+                }
+            }
+            reader.close();
+
+            // Decode the Base64 encoded key
+            byte[] keyBytes = Base64.getDecoder().decode(keyBuilder.toString());
+
+            // Create a KeyFactory for the appropriate algorithm (e.g., RSA)
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+
+            // Create the private key from the key bytes
+            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
+            PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
+
+            // Now you have the PrivateKey object
+            System.out.println("Private Key Algorithm: " + privateKey.getAlgorithm());
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
