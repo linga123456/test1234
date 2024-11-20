@@ -150,3 +150,38 @@ mat-checkbox {
   margin-right: 8px;
 }
 
+<div class="table-container">
+  <form [formGroup]="form">
+    <table mat-table [dataSource]="dataSource" class="mat-elevation-z8">
+      <!-- ID Column -->
+      <ng-container matColumnDef="id">
+        <th mat-header-cell *matHeaderCellDef>ID</th>
+        <td mat-cell *matCellDef="let element">{{ element.id }}</td>
+      </ng-container>
+
+      <!-- Name Column -->
+      <ng-container matColumnDef="name">
+        <th mat-header-cell *matHeaderCellDef>Name</th>
+        <td mat-cell *matCellDef="let element">{{ element.name }}</td>
+      </ng-container>
+
+      <!-- Borrow Options Column -->
+      <ng-container matColumnDef="borrowOptions">
+        <th mat-header-cell *matHeaderCellDef>Borrow Options</th>
+        <td mat-cell *matCellDef="let element">
+          <mat-checkbox
+            *ngFor="let option of borrowOptions"
+            [formControlName]="getControlName(element.id, option)"
+          >
+            {{ option }}
+          </mat-checkbox>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+    </table>
+  </form>
+</div>
+
+
