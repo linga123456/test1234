@@ -183,19 +183,48 @@ public class ApiClientWithHttpURLConnection {
         FileInputStream caCertInputStream = new FileInputStream(caCertPath);
         X509Certificate caCert = (X509Certificate) cf.generateCertificate(caCertInputStream);
         caCertInputStream.close();
+import java.util.concurrent.ConcurrentLinkedQueue;
 
-        // Create a KeyStore and load the CA certificate
-        KeyStore caKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-        caKeyStore.load(null, null);  // Initialize the KeyStore
-        caKeyStore.setCertificateEntry("caCert", caCert);  // Add the CA certificate
+public class OrderSequenceManager {
+    private final ConcurrentLinkedQueue<Integer> orderQueue = new ConcurrentLinkedQueue<>();
+    
+    // Simulated external Server C sequence management (thread-safe)
+    private int currentServerCSequence = 1000; // Initial sequence in Server C
 
-        // Create a TrustManager that trusts the CA in the KeyStore
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(caKeyStore);
+    // Synchronized method to get the next sequence and update Server C in one atomic operation
+    private synchronized int getCurrentServerCSequence(int batchSize) {
+        int startId = currentServerCSequence; // Capture the current sequence
+        currentServerCSequence += batchSize; // Increment it by batch size
+        return startId; // Return the previous sequence as the starting ID
+    }
 
-        // Initialize the SSLContext with the custom TrustManager (CA trust)
-        sslContext.init(null, tmf.getTrustManagers(), new SecureRandom());
+    // Method to allocate order IDs
+    public synchronized void allocateOrderIds(int batchSize) {
+        int startId = getCurrentServerCSequence(batchSize);
+        for (int i = startId; i < startId + batchSize; i++) {
+            orderQueue.add(i);
+        }
+        System.out.println("Allocated Order IDs: " + startId + " to " + (startId + batchSize - 1));
+    }
 
-        return sslContext;
+    // Method to get the next available order ID
+    public synchronized Integer getNextOrderId() {
+        return orderQueue.poll(); // Retrieves and removes the head of the queue
+    }
+
+    // Example test
+    public static void main(String[] args) {
+        OrderSequenceManager manager = new OrderSequenceManager();
+
+        // Simulate two batch requests
+        manager.allocateOrderIds(24); // First request for 24 orders
+        manager.allocateOrderIds(2);  // Second request for 2 orders
+
+        // Process orders sequentially
+        for (int i = 0; i < 26; i++) {
+            System.out.println("Processing Order ID: " + manager.getNextOrderId());
+        }
     }
 }
+
+        // Create a KeyStore and load 
