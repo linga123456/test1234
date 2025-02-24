@@ -1,0 +1,127 @@
+import { Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class StrategyService {
+  constructor() {}
+
+  determineStrategy(row: any, divRates: any[]): string {
+    const marketPlace = row.marketPlace; // Get marketPlace from row
+
+    // Filter divRates for the given marketplace where isActive is true
+    const activeDivRates = divRates.filter(rate => rate.marketPlace === marketPlace && rate.isActive);
+
+    if (activeDivRates.length === 0) {
+      console.warn(`No active divRates found for marketPlace: ${marketPlace}`);
+      return 'regular'; // Default to 'regular' if no active rates
+    }
+
+    const recordDate = new Date(row.recordDate);
+    const today = new Date();
+    const diffInDays = Math.floor((recordDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    // If record date is in the past, return 'regular'
+    if (diffInDays < 0) {
+      return 'regular';
+    }
+
+    let strategy = 'regular'; // Default strategy
+
+    for (const rate of activeDivRates) {
+      if (diffInDays <= rate.divOnly) {
+        strategy = 'divOnly';
+        break;
+      } else if (diffInDays > rate.divOnly && diffInDays <= rate.divRegular) {
+        strategy = 'divRegular';
+        break;
+      }
+    }
+
+    return strategy;
+  }
+}
+import { Component, OnInit } from '@angular/core';
+import { StrategyService } from './strategy.service';
+
+@Component({
+  selector: 'app-strategy-grid',
+  templateUrl: './strategy-grid.component.html',
+})
+export class StrategyGridComponent implements OnInit {
+  row = { id: 1, recordDate: '2025-03-10', marketPlace: 'NYSE' }; // Example row with marketPlace
+
+  divRates = [
+    { marketPlace: 'NYSE', divOnly: 5, divRegular: 10, isActive: true },
+    { marketPlace: 'NASDAQ', divOnly: 3, divRegular: 7, isActive: true },
+  ];
+
+  strategy: string;
+
+  constructor(private strategyService: StrategyService) {}
+
+  ngOnInit() {
+    this.strategy = this.strategyService.determineStrategy(this.row, this.divRates);
+    console.log(`Strategy for row ${this.row.id}:`, this.strategy);
+  }
+}
+
+import { StrategyService } from './strategy.service';
+
+describe('StrategyService', () => {
+  let service: StrategyService;
+
+  beforeEach(() => {
+    service = new StrategyService();
+  });
+
+  it('should return "regular" if no active divRates exist for the marketplace', () => {
+    const row = { recordDate: '2025-03-10', marketPlace: 'NYSE' };
+    const divRates = []; // No active divRates
+
+    expect(service.determineStrategy(row, divRates)).toBe('regular');
+  });
+
+  it('should return "regular" if recordDate is in the past', () => {
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - 5); // 5 days in the past
+
+    const row = { recordDate: pastDate.toISOString(), marketPlace: 'NYSE' };
+    const divRates = [{ marketPlace: 'NYSE', divOnly: 5, divRegular: 10, isActive: true }];
+
+    expect(service.determineStrategy(row, divRates)).toBe('regular');
+  });
+
+  it('should return "divOnly" if days to recordDate is less than or equal to divOnly', () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 4); // 4 days ahead
+
+    const row = { recordDate: futureDate.toISOString(), marketPlace: 'NYSE' };
+    const divRates = [{ marketPlace: 'NYSE', divOnly: 5, divRegular: 10, isActive: true }];
+
+    expect(service.determineStrategy(row, divRates)).toBe('divOnly');
+  });
+
+  it('should return "divRegular" if days to recordDate is greater than divOnly but less than or equal to divRegular', () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 8); // 8 days ahead
+
+    const row = { recordDate: futureDate.toISOString(), marketPlace: 'NYSE' };
+    const divRates = [{ marketPlace: 'NYSE', divOnly: 5, divRegular: 10, isActive: true }];
+
+    expect(service.determineStrategy(row, divRates)).toBe('divRegular');
+  });
+
+  it('should return "regular" if days to recordDate is greater than divRegular', () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 15); // 15 days ahead
+
+    const row = { recordDate: futureDate.toISOString(), marketPlace: 'NYSE' };
+    const divRates = [{ marketPlace: 'NYSE', divOnly: 5, divRegular: 10, isActive: true }];
+
+    expect(service.determineStrategy(row, divRates)).toBe('regular');
+  });
+});
+
+
+
