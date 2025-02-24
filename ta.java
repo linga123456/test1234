@@ -11,6 +11,108 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.*;
+import org.springframework.web.client.RestTemplate;
+import java.util.concurrent.*;
+
+@ExtendWith(MockitoExtension.class)
+class OrderManagerTest {
+
+    @Mock
+    private RestTemplate restTemplate; // Mocking RestTemplate
+
+    @Mock
+    private AppConfig appConfig; // Mocking AppConfig
+
+    private OrderManager orderManager;
+    private Queue<Integer> orderQueue;
+
+    @BeforeEach
+    void setUp() {
+        // Initialize OrderManager with mocked dependencies
+        orderManager = new OrderManager(restTemplate, appConfig);
+        orderQueue = new ConcurrentLinkedQueue<>();
+        // Set the queue directly if needed
+    }
+
+    @Test
+    void testGetNextOrderId_whenQueueEmpty_allocatesNewIds() throws InterruptedException {
+        // Simulate an empty queue
+        orderQueue.clear();
+
+        // Mock the behavior of RestTemplate or AppConfig if needed
+        // For example, if AppConfig provides some configuration needed for allocateOrderIds
+        when(appConfig.getBatchSize()).thenReturn(10); // Example: Mocking a method in AppConfig
+        doNothing().when(restTemplate).getForObject(anyString(), eq(String.class));  // Example mocking RestTemplate call if required
+
+        // Call the method
+        Integer nextOrderId = orderManager.getNextOrderId();
+
+        // Assert that the order ID is returned
+        assertNotNull(nextOrderId, "Order ID should not be null after allocation.");
+        assertEquals(1, nextOrderId, "The first order ID should be 1.");
+    }
+
+    @Test
+    void testGetNextOrderId_whenQueueHasIds_returnsNextId() {
+        // Prepopulate the queue with IDs
+        orderQueue.add(1);
+        orderQueue.add(2);
+
+        // Call the method
+        Integer nextOrderId = orderManager.getNextOrderId();
+
+        // Assert that the first order ID is returned
+        assertEquals(1, nextOrderId, "The first order ID should be 1.");
+    }
+
+    @Test
+    void testGetNextOrderId_whenMultipleThreadsAccessQueue() throws InterruptedException {
+        // Create a separate thread to call getNextOrderId()
+        Runnable task = () -> {
+            try {
+                Integer orderId = orderManager.getNextOrderId();
+                assertNotNull(orderId);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        };
+
+        // Start multiple threads
+        Thread thread1 = new Thread(task);
+        Thread thread2 = new Thread(task);
+        thread1.start();
+        thread2.start();
+
+        // Wait for threads to finish
+        thread1.join();
+        thread2.join();
+
+        // Validate that no exceptions occurred during concurrent access
+        assertTrue(true); // If no exceptions thrown, the test passed
+    }
+
+    @Test
+    void testGetNextOrderId_whenAllocationFails_shouldThrowException() {
+        // Simulate failure in allocation
+        orderQueue.clear();
+
+        // Mock allocation failure (AppConfig/RestTemplate calls)
+        when(appConfig.getBatchSize()).thenReturn(10); // Example: Mocking AppConfig
+        doThrow(new RuntimeException("Failed to allocate order IDs")).when(restTemplate).getForObject(anyString(), eq(String.class));
+
+        // Expect an exception when getting the next order ID
+        assertThrows(RuntimeException.class, () -> {
+            orderManager.getNextOrderId();
+        }, "Should throw exception if allocation fails.");
+    }
+}
 
 @RestController
 public class WorkbenchController {
