@@ -20,6 +20,71 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.springframework.web.client.RestTemplate;
 import java.util.concurrent.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.Condition;
+
+@Service
+public class OrderManager {
+
+    private final RestTemplate restTemplate;
+    private final AppConfig appConfig;
+    private final Queue<Integer> orderQueue = new ConcurrentLinkedQueue<>();
+    private final Lock lock = new ReentrantLock(true); // Fair lock to avoid thread starvation
+    private final Condition notEmpty = lock.newCondition(); // Condition to wait when queue is empty
+
+    public OrderManager(RestTemplate restTemplate, AppConfig appConfig) {
+        this.restTemplate = restTemplate;
+        this.appConfig = appConfig;
+    }
+
+    public Integer getNextParentId() { 
+        lock.lock();
+        try {
+            while (orderQueue.isEmpty()) {
+                allocateOrderIds(10); // Request 10 more IDs
+                notEmpty.await(); // Wait until IDs are available
+            }
+            return orderQueue.poll();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Thread interrupted while waiting for parent IDs", e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void allocateOrderIds(int batchSize) {
+        lock.lock();
+        try {
+            if (!orderQueue.isEmpty()) {
+                return; // Avoid duplicate allocation if another thread already filled the queue
+            }
+
+            Integer startingId = getABParentId(batchSize);
+            if (startingId == null) {
+                throw new RuntimeException("Failed to allocate parent IDs");
+            }
+
+            for (int i = 0; i < batchSize; i++) {
+                orderQueue.add(startingId + i);
+            }
+
+            notEmpty.signalAll(); // Notify waiting threads
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private Integer getABParentId(int batchSize) { 
+        String url = "http://server-c/api/get-sequence?batchSize=" + batchSize;
+        return restTemplate.getForObject(url, Integer.class);
+    }
+}
 
 @ExtendWith(MockitoExtension.class)
 class OrderManagerTest {
