@@ -1,4 +1,73 @@
 {
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+@Service
+public class OrderManager {
+
+    private final RestTemplate restTemplate;
+    private final AppConfig appConfig;
+    private final Queue<Integer> orderQueue = new ConcurrentLinkedQueue<>();
+    private final Lock queueLock = new ReentrantLock(); // Lock for queue management
+    private final Lock allocationLock = new ReentrantLock(); // Lock for allocating order IDs
+
+    public OrderManager(RestTemplate restTemplate, AppConfig appConfig) {
+        this.restTemplate = restTemplate;
+        this.appConfig = appConfig;
+    }
+
+    public Integer getNextParentId() {
+        queueLock.lock();
+        try {
+            while (orderQueue.isEmpty()) {
+                allocateOrderIds(10); // Request 10 more IDs
+                try {
+                    wait(); // Wait until IDs are available
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Thread interrupted while waiting for parent IDs", e);
+                }
+            }
+            return orderQueue.poll();
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    private void allocateOrderIds(int batchSize) {
+        allocationLock.lock(); // Locking allocation separately
+        try {
+            // Avoid redundant allocations if another thread already filled the queue
+            if (!orderQueue.isEmpty()) {
+                return;
+            }
+
+            Integer startingId = getABParentId(batchSize);
+            if (startingId == null) {
+                throw new RuntimeException("Failed to allocate parent IDs");
+            }
+
+            for (int i = 0; i < batchSize; i++) {
+                orderQueue.add(startingId + i);
+            }
+
+            synchronized (this) {
+                notifyAll(); // Notify waiting threads that IDs are available
+            }
+        } finally {
+            allocationLock.unlock(); // Unlock allocation lock after allocation
+        }
+    }
+
+    private Integer getABParentId(int batchSize) { 
+        String url = "http://server-c/api/get-sequence?batchSize=" + batchSize;
+        return restTemplate.getForObject(url, Integer.class);
+    }
+}
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
