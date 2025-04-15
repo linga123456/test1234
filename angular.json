@@ -1,4 +1,16 @@
-{
+sys_args: >
+  -XX:+UseG1GC
+  -XX:MaxGCPauseMillis=200
+  -Xms8g
+  -Xmx8g
+  -XX:+ParallelRefProcEnabled
+  -XX:InitiatingHeapOccupancyPercent=30
+  -XX:G1ReservePercent=20
+  -XX:G1HeapRegionSize=8m
+  -XX:+UnlockExperimentalVMOptions
+  -XX:+UseStringDeduplication
+  {{ ssl_params }}
+
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
   "newProjectRoot": "projects",
